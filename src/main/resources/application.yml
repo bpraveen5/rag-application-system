@@ -1,0 +1,267 @@
+spring:
+  application:
+    name: rag-application
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # ──────────────────────────────────────────────
+  # DataSource
+  # ──────────────────────────────────────────────
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ragdb}
+    username: ${DATABASE_USERNAME:raguser}
+    password: ${DATABASE_PASSWORD:ragpassword}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: RagHikariPool
+
+  # ──────────────────────────────────────────────
+  # JPA / Hibernate
+  # ──────────────────────────────────────────────
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
+
+  # ──────────────────────────────────────────────
+  # Flyway
+  # ──────────────────────────────────────────────
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+  # ──────────────────────────────────────────────
+  # Redis
+  # ──────────────────────────────────────────────
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  # ──────────────────────────────────────────────
+  # Cache
+  # ──────────────────────────────────────────────
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+      cache-null-values: false
+
+  # ──────────────────────────────────────────────
+  # File Upload
+  # ──────────────────────────────────────────────
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  # ──────────────────────────────────────────────
+  # Spring AI – Ollama
+  # ──────────────────────────────────────────────
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://ollama:11434}
+
+      chat:
+        options:
+          model: ${AI_CHAT_MODEL:llama3.2:3b}
+          temperature: ${AI_TEMPERATURE:0.7}
+
+      embedding:
+        options:
+          model: ${AI_EMBEDDING_MODEL:nomic-embed-text}
+
+    retry:
+      enabled: false
+    # Disable automatic retries for AI calls so failures surface immediately
+  
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
+        initialize-schema: false
+# ──────────────────────────────────────────────
+# Server
+# ──────────────────────────────────────────────
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/plain
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# ──────────────────────────────────────────────
+# Actuator / Management
+# ──────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers,caches
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: always
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: 1.0
+
+# ──────────────────────────────────────────────
+# SpringDoc / OpenAPI
+# ──────────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    try-it-out-enabled: true
+  show-actuator: true
+
+# ──────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.ragapp: DEBUG
+    org.springframework.ai: INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n"
+  file:
+    name: logs/rag-application.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+# ──────────────────────────────────────────────
+# Application-specific Configuration
+# ──────────────────────────────────────────────
+app:
+  # JWT
+  security:
+    jwt:
+      secret: ${JWT_SECRET:my-very-long-and-secure-secret-key-for-jwt-signing-at-least-256-bits}
+      expiration-ms: ${JWT_EXPIRATION_MS:86400000}         # 24 hours
+      refresh-expiration-ms: ${JWT_REFRESH_MS:604800000}  # 7 days
+
+  # Retrieval
+  retrieval:
+    top-k: ${RETRIEVAL_TOP_K:5}
+    min-similarity: ${RETRIEVAL_MIN_SIMILARITY:0.4}
+    hybrid-search-enabled: ${HYBRID_SEARCH_ENABLED:true}
+    keyword-weight: 0.3
+    vector-weight: 0.7
+    reranking-enabled: ${RERANKING_ENABLED:false}
+    context-compression-enabled: ${CONTEXT_COMPRESSION_ENABLED:true}
+    max-context-tokens: 6000
+
+  # Chunking
+  chunking:
+    strategy: ${CHUNKING_STRATEGY:recursive}   # fixed | recursive | semantic
+    chunk-size: ${CHUNK_SIZE:1000}
+    chunk-overlap: ${CHUNK_OVERLAP:200}
+    min-chunk-size: 100
+    max-chunk-size: 4000
+    separators:
+      - "\n\n"
+      - "\n"
+      - ". "
+      - " "
+      - ""
+
+  # Document processing
+  document:
+    storage-path: ${DOCUMENT_STORAGE_PATH:/tmp/rag-documents}
+    allowed-types:
+      - application/pdf
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - text/plain
+      - text/markdown
+      - text/html
+    max-file-size-mb: 100
+
+  # Conversation
+  conversation:
+    max-history-messages: ${MAX_HISTORY_MESSAGES:20}
+    ttl-hours: ${CONVERSATION_TTL_HOURS:24}
+
+  # Rate limiting
+  rate-limiting:
+    enabled: ${RATE_LIMITING_ENABLED:true}
+    chat:
+      capacity: 60
+      refill-tokens: 60
+      refill-duration-seconds: 60
+    upload:
+      capacity: 10
+      refill-tokens: 10
+      refill-duration-seconds: 60
+
+  # Async
+  async:
+    core-pool-size: 4
+    max-pool-size: 16
+    queue-capacity: 500
+    thread-name-prefix: rag-async-
+
+  # Multi-tenancy
+  multi-tenant:
+    enabled: ${MULTI_TENANT_ENABLED:false}
+    header-name: X-Tenant-ID
+
+  # Prompts
+  prompts:
+    system: |
+      You are a knowledgeable AI assistant. Use the provided context to answer questions accurately.
+      If the answer cannot be found in the context, say so honestly.
+      Always cite the source document when possible.
+      Be concise, clear, and factual. Do not make up information.
+    no-context: |
+      I could not find relevant information in the knowledge base to answer your question.
+      Please try rephrasing your question or uploading relevant documents.

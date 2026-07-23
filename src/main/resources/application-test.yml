@@ -1,0 +1,65 @@
+spring:
+  datasource:
+    url: ${TEST_DATABASE_URL:jdbc:tc:postgresql:16:///ragtest?TC_IMAGE_NAME=pgvector/pgvector:pg16}
+    username: test
+    password: test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  cache:
+    type: simple  # Use in-memory cache for tests (no Redis)
+
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+
+      chat:
+        options:
+          model: llama3.2:3b
+
+      embedding:
+        options:
+          model: nomic-embed-text
+
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        dimensions: 768
+
+server:
+  port: 0  # Random port for integration tests
+
+app:
+  security:
+    jwt:
+      secret: dGVzdC1zZWNyZXQta2V5LWZvci11bml0LXRlc3RzLW11c3QtYmUtYXQtbGVhc3QtMzItY2hhcnM=
+      expiration-ms: 3600000
+      refresh-expiration-ms: 86400000
+  retrieval:
+    top-k: 3
+    min-similarity: 0.5
+    hybrid-search-enabled: false
+  chunking:
+    strategy: fixed
+    chunk-size: 200
+    chunk-overlap: 20
+  rate-limiting:
+    enabled: false
+
+logging:
+  level:
+    com.ragapp: DEBUG
+    org.springframework.security: WARN

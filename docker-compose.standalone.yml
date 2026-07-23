@@ -1,0 +1,105 @@
+# ================================================================
+# RAG Application — Standalone Docker Compose
+# Run with: docker-compose -f docker-compose.standalone.yml up -d
+# Requires: the ollama service to have the chat/embedding models pulled
+#   (e.g. docker exec rag-ollama ollama pull llama3.1:8b
+#         docker exec rag-ollama ollama pull nomic-embed-text)
+# ================================================================
+
+networks:
+  rag-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+
+services:
+
+  # ── PostgreSQL + pgvector ──────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ragdb
+      POSTGRES_USER:     raguser
+      POSTGRES_PASSWORD: ragpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raguser -d ragdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag-net
+
+  # ── Redis ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: rag-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - rag-net
+  # ollama
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    restart: unless-stopped
+
+    ports:
+      - "11434:11434"
+
+    volumes:
+      - ollama_data:/root/.ollama
+
+    networks:
+      - rag-net
+  # ── Spring Boot App (built from source) ───────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL:          jdbc:postgresql://postgres:5432/ragdb
+      DATABASE_USERNAME:     raguser
+      DATABASE_PASSWORD:     ragpassword
+      REDIS_HOST:            redis
+      REDIS_PORT:            6379
+      OLLAMA_BASE_URL: http://ollama:11434
+      AI_CHAT_MODEL: llama3.2:3b
+      AI_EMBEDDING_MODEL: nomic-embed-text
+      JWT_SECRET:            ${JWT_SECRET:-change-me-to-a-strong-random-secret-at-least-32-chars}
+      SPRING_PROFILES_ACTIVE: prod
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    networks:
+      - rag-net

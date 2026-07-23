@@ -1,0 +1,35 @@
+### Maven ###
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### Spring Boot ###
+*.log
+logs/
+spring-shell.log
+
+### IDE ###
+.idea/
+*.iml
+*.iws
+.vscode/
+*.code-workspace
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Docker ###
+.env
+docker-compose.override.yml
+
+### Application ###
+/tmp/rag-documents/
+uploads/
+*.tmp
+
+### Secrets ###
+application-local.yml
+application-prod.yml
+secrets/

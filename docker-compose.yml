@@ -1,0 +1,172 @@
+# ================================================================
+# RAG Application — Full Docker Compose Stack
+# Services: app · postgres+pgvector · redis · prometheus · grafana
+# ================================================================
+
+networks:
+  rag-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  document_storage:
+  ollama_data:
+
+services:
+
+  # ── PostgreSQL + pgvector ──────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ragdb
+      POSTGRES_USER:     raguser
+      POSTGRES_PASSWORD: ragpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raguser -d ragdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag-net
+
+  # ── Redis ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: rag-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - rag-net
+  # ── Ollama ───────────────────────────────────────────────────
+  ollama:
+      image: ollama/ollama:latest
+      container_name: rag-ollama
+      restart: unless-stopped
+      ports:
+        - "11434:11434"
+      volumes:
+        - ollama_data:/root/.ollama
+      networks:
+        - rag-net  
+
+  # ── Spring Boot App ───────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started 
+    ports:
+      - "8080:8080"
+    environment:
+      # DataSource
+      DATABASE_URL:         jdbc:postgresql://postgres:5432/ragdb
+      DATABASE_USERNAME:    raguser
+      DATABASE_PASSWORD:    ragpassword
+      # Redis
+      REDIS_HOST:           redis
+      REDIS_PORT:           6379
+      # Ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+
+      # Models
+      AI_CHAT_MODEL: llama3.2:3b
+      AI_EMBEDDING_MODEL: nomic-embed-text
+
+      # Ollama request timeout — CPU-only inference of an 8B model with RAG
+      # context can genuinely take several minutes; raise further if needed.
+      APP_AI_CALL_TIMEOUT_MS: ${APP_AI_CALL_TIMEOUT_MS:-300000}
+      # Dev toggles (read from host .env when using docker-compose)
+      APP_AI_MOCK_EMBEDDINGS: ${APP_AI_MOCK_EMBEDDINGS:-false}
+      APP_AI_MOCK_LLM: ${APP_AI_MOCK_LLM:-false}
+      # Security
+      JWT_SECRET:           ${JWT_SECRET:-change-me-to-a-strong-random-secret-at-least-32-chars}
+      JWT_EXPIRATION_MS:    ${JWT_EXPIRATION_MS:-86400000}
+      # Retrieval
+      RETRIEVAL_TOP_K:      ${RETRIEVAL_TOP_K:-5}
+      HYBRID_SEARCH_ENABLED: ${HYBRID_SEARCH_ENABLED:-true}
+      # Chunking
+      CHUNKING_STRATEGY:    ${CHUNKING_STRATEGY:-recursive}
+      CHUNK_SIZE:           ${CHUNK_SIZE:-1000}
+      CHUNK_OVERLAP:        ${CHUNK_OVERLAP:-200}
+      # Document storage
+      DOCUMENT_STORAGE_PATH: /app/documents
+      # Profile
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - document_storage:/app/documents
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+    networks:
+      - rag-net
+
+  # ── Prometheus ────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: rag-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    networks:
+      - rag-net
+
+  # ── Grafana ───────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: rag-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER:     admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+      GF_AUTH_ANONYMOUS_ENABLED:  "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - rag-net
