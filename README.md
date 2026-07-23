@@ -1,6 +1,6 @@
 # RAG Application
 
-**Production-ready Retrieval-Augmented Generation (RAG) API** built with Spring Boot 3.x, Java 21, Spring AI, a local Ollama LLM (llama3.2:3b), PostgreSQL + pgvector, and Redis.
+**Production-ready Retrieval-Augmented Generation (RAG) API** built with Spring Boot 3.x, Java 17, Spring AI, a local Ollama LLM (llama3.2:3b), PostgreSQL + pgvector, and Redis.
 
 ---
 
@@ -10,19 +10,19 @@
 ┌──────────────────────────────────────────────────────────────────────┐
 │                         RAG Application                              │
 │                                                                      │
-│  REST Controllers  →  Services  →  AI Layer  →  Repositories        │
-│  ─────────────────────────────────────────────────────────────────  │
+│  REST Controllers  →  Services  →  AI Layer  →  Repositories         │
+│  ─────────────────────────────────────────────────────────────────   │
 │  AuthController        AuthService     EmbeddingService   UserRepo   │
 │  DocumentController    DocumentService  RetrieverService   DocRepo   │
 │  ChatController        IndexingService  PromptBuilder      ChunkRepo │
 │  HealthController      ChatService      LlmClient          ConvRepo  │
 │                        AuditService                        MsgRepo   │
 │                                                                      │
-│  Security: JWT Filter → UserDetailsService → BCrypt                 │
-│  Chunking:  FixedSize | Recursive | Semantic                        │
-│  Parsing:   PDF | DOCX | TXT | Markdown | HTML  (Tika fallback)     │
+│  Security: JWT Filter → UserDetailsService → BCrypt                  │
+│  Chunking:  FixedSize | Recursive | Semantic                         │
+│  Parsing:   PDF | DOCX | TXT | Markdown | HTML  (Tika fallback)      │
 │  Cache:     Redis  (embeddings, search, docs, conversations)         │
-│  Metrics:   Micrometer → Prometheus → Grafana                       │
+│  Metrics:   Micrometer → Prometheus → Grafana                        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -142,10 +142,15 @@ Services:
 | Service      | URL                          |
 |-------------|------------------------------|
 | API          | http://localhost:8080/api    |
+| App Health   | http://localhost:8080/api/health  |
 | Swagger UI   | http://localhost:8080/api/swagger-ui.html |
 | Prometheus   | http://localhost:9090        |
+| Prometheus   | http://localhost:9090/targets?search=       |
 | Grafana      | http://localhost:3000        |
+| Grafana      | http://localhost:3000/connections/datasources      |
+| Grafana      | http://localhost:3000/dashboards        |
 | Ollama       | http://localhost:11434       |
+
 
 ### 3. Run locally (development)
 
@@ -175,10 +180,10 @@ POST /api/auth/register
 Content-Type: application/json
 
 {
-  "username": "alice",
-  "email": "alice@example.com",
-  "password": "SecurePass123!",
-  "fullName": "Alice Smith"
+  "username": "bpraveen",
+  "email": "bpraveen@gmail.com",
+  "password": "Password123",
+  "fullName": "B Praveen"
 }
 ```
 
@@ -188,17 +193,26 @@ POST /api/auth/login
 Content-Type: application/json
 
 {
-  "username": "alice",
-  "password": "SecurePass123!"
+  "username": "praveen",
+  "password": "*********"
 }
 
 Response:
 {
-  "accessToken": "eyJhbGci...",
-  "refreshToken": "eyJhbGci...",
-  "tokenType": "Bearer",
-  "expiresIn": 86400,
-  "user": { "id": "...", "username": "alice", "roles": ["USER"] }
+    "accessToken": "eyJhbGciOiJIUzM4NCJ9........",
+    "refreshToken": "eyJhbGciOiJIUzM4NCJ9........",
+    "tokenType": "Bearer",
+    "expiresIn": 86400,
+    "user": {
+        "id": "baa2177f-6315-433b-b107-1869dde68b00",
+        "username": "praveen",
+        "email": "praveen@gmail.com",
+        "fullName": "Praveen Kumar",
+        "roles": [
+            "USER"
+        ],
+        "createdAt": "2026-07-21T09:08:47.904264Z"
+    }
 }
 ```
 
@@ -211,6 +225,15 @@ Authorization: Bearer <token>
 Content-Type: multipart/form-data
 
 file=@/path/to/document.pdf
+
+{
+    "documentId": "b6af2336-e5ff-4573-b22d-18d2b431a8f5",
+    "filename": "db_introduction_applications.docx",
+    "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "fileSize": 22365,
+    "status": "UPLOADED",
+    "message": "Document uploaded and indexing started in background."
+}
 ```
 
 #### Index a document
@@ -220,10 +243,14 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "documentId": "550e8400-e29b-41d4-a716-446655440000",
-  "chunkingStrategy": "recursive",
-  "chunkSize": 1000,
-  "chunkOverlap": 200
+  "documentId": "a684d624-c1ae-42b4-8f8b-78cef56c1035"
+}
+Response:
+{
+    "documentId": "a684d624-c1ae-42b4-8f8b-78cef56c1035",
+    "status": "INDEXED",
+    "chunksCreated": 6,
+    "processingTimeMs": 2953
 }
 ```
 
@@ -248,32 +275,75 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "question": "What are the main findings of the report?",
-  "conversationId": null,
+  "question": "what is sql?",
+  "conversationId":  null,
   "topK": 5,
-  "minSimilarity": 0.7
+  "minSimilarity": 0.3
 }
 
 Response:
 {
-  "conversationId": "...",
-  "messageId": "...",
-  "answer": "The report highlights three main findings...",
-  "sources": [
-    {
-      "chunkId": "...",
-      "documentName": "annual-report.pdf",
-      "chunkText": "...",
-      "similarityScore": 0.92,
-      "pageNumber": 5
-    }
-  ],
-  "sourcesUsed": 3,
-  "retrievalLatencyMs": 120,
-  "llmLatencyMs": 850,
-  "inputTokens": 1240,
-  "outputTokens": 380,
-  "model": "llama3.2:3b"
+    "conversationId": "9a824e08-991a-4e39-894b-e9baf01ee5e1",
+    "messageId": "4e64fc07-cf4d-4844-988b-281b773106cd",
+    "answer": "According to the provided context, SQL (Structured Query Language) is not explicitly mentioned. However, it can be inferred that SQL is related to database management systems.\n\nThe source document \"db_introduction_applications.docx\" discusses Database Management Systems (DBMS), but does not specifically mention SQL.\n\nI don't have enough information in the knowledge base to answer that.",
+    "sources": [
+        {
+            "chunkId": "feb566f7-fd1f-4c00-9bd4-1881729f817b",
+            "documentId": "b6af2336-e5ff-4573-b22d-18d2b431a8f5",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "s realised that they needed a better solution to this problem.\nLarry Ellison, the co-founder of Oracle was amongst the first few, who realised the need for a software based Database Management System. What is DBMS?\nA DBMS is a software that allows creation, definition and manipulation of database, allowing users to store, process and analyse data easily. \nDBMS provides us with an interface or a tool, to perform various operations like creating database, storing data in it, updating data, creating tables in the database and a lot more.\nDBMS also provides protection and security to the databases. It also maintains data consistency in case of multiple users.\nHere are some examples of popular DBMS used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics:",
+            "similarityScore": 0.4667019176313392,
+            "chunkIndex": 2,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "5b184976-b5a8-4c43-be8c-15a09703fc96",
+            "documentId": "b0c6aa57-5828-419f-972c-147cf8d9b475",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "s realised that they needed a better solution to this problem.\nLarry Ellison, the co-founder of Oracle was amongst the first few, who realised the need for a software based Database Management System. What is DBMS?\nA DBMS is a software that allows creation, definition and manipulation of database, allowing users to store, process and analyse data easily. \nDBMS provides us with an interface or a tool, to perform various operations like creating database, storing data in it, updating data, creating tables in the database and a lot more.\nDBMS also provides protection and security to the databases. It also maintains data consistency in case of multiple users.\nHere are some examples of popular DBMS used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics:",
+            "similarityScore": 0.4667019176313392,
+            "chunkIndex": 2,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "358f4dd4-f2ea-44eb-bebd-9b00fbc002ce",
+            "documentId": "a684d624-c1ae-42b4-8f8b-78cef56c1035",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "s realised that they needed a better solution to this problem.\nLarry Ellison, the co-founder of Oracle was amongst the first few, who realised the need for a software based Database Management System. What is DBMS?\nA DBMS is a software that allows creation, definition and manipulation of database, allowing users to store, process and analyse data easily. \nDBMS provides us with an interface or a tool, to perform various operations like creating database, storing data in it, updating data, creating tables in the database and a lot more.\nDBMS also provides protection and security to the databases. It also maintains data consistency in case of multiple users.\nHere are some examples of popular DBMS used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics:",
+            "similarityScore": 0.4667019176313392,
+            "chunkIndex": 2,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "66f7ff53-a539-4103-a767-fe0ed4dbef43",
+            "documentId": "b0c6aa57-5828-419f-972c-147cf8d9b475",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics: Data stored into Tables: Data is never directly stored into the database. Data is stored into tables, created inside the database. DBMS also allows to have relationships between tables which makes the data more meaningful and connected. You can easily understand what type of data is stored where by looking at all the tables created in a database. Reduced Redundancy: In the modern world hard drives are very cheap, but earlier when hard drives were too expensive, unnecessary repetition of data in database was a big problem. But DBMS follows Normalisation which divides the data in such a way that repetition is minimum.",
+            "similarityScore": 0.4589887529461737,
+            "chunkIndex": 3,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "b9be760a-be17-4d5f-bb4a-06a8328d7f3b",
+            "documentId": "b6af2336-e5ff-4573-b22d-18d2b431a8f5",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics: Data stored into Tables: Data is never directly stored into the database. Data is stored into tables, created inside the database. DBMS also allows to have relationships between tables which makes the data more meaningful and connected. You can easily understand what type of data is stored where by looking at all the tables created in a database. Reduced Redundancy: In the modern world hard drives are very cheap, but earlier when hard drives were too expensive, unnecessary repetition of data in database was a big problem. But DBMS follows Normalisation which divides the data in such a way that repetition is minimum.",
+            "similarityScore": 0.4589887529461737,
+            "chunkIndex": 3,
+            "pageNumber": null,
+            "metadata": {}
+        }
+    ],
+    "sourcesUsed": 5,
+    "retrievalLatencyMs": 687,
+    "llmLatencyMs": 177710,
+    "inputTokens": 1111,
+    "outputTokens": 74,
+    "model": "llama3.2:3b"
 }
 ```
 
@@ -294,9 +364,67 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "query": "machine learning techniques",
-  "topK": 10,
-  "minSimilarity": 0.6
+  "query": "sql",
+  "topK": 5,
+  "minSimilarity": 0.3
+}
+Response:
+{
+    "query": "sql",
+    "results": [
+        {
+            "chunkId": "ca9664ba-31fc-49f5-b4ef-b3af91a16810",
+            "documentId": "a684d624-c1ae-42b4-8f8b-78cef56c1035",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics: Data stored into Tables: Data is never directly stored into the database. Data is stored into tables, created inside the database. DBMS also allows to have relationships between tables which makes the data more meaningful and connected. You can easily understand what type of data is stored where by looking at all the tables created in a database. Reduced Redundancy: In the modern world hard drives are very cheap, but earlier when hard drives were too expensive, unnecessary repetition of data in database was a big problem. But DBMS follows Normalisation which divides the data in such a way that repetition is minimum.",
+            "similarityScore": 0.46346040191767085,
+            "chunkIndex": 3,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "66f7ff53-a539-4103-a767-fe0ed4dbef43",
+            "documentId": "b0c6aa57-5828-419f-972c-147cf8d9b475",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics: Data stored into Tables: Data is never directly stored into the database. Data is stored into tables, created inside the database. DBMS also allows to have relationships between tables which makes the data more meaningful and connected. You can easily understand what type of data is stored where by looking at all the tables created in a database. Reduced Redundancy: In the modern world hard drives are very cheap, but earlier when hard drives were too expensive, unnecessary repetition of data in database was a big problem. But DBMS follows Normalisation which divides the data in such a way that repetition is minimum.",
+            "similarityScore": 0.46346040191767085,
+            "chunkIndex": 3,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "5b184976-b5a8-4c43-be8c-15a09703fc96",
+            "documentId": "b0c6aa57-5828-419f-972c-147cf8d9b475",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "s realised that they needed a better solution to this problem.\nLarry Ellison, the co-founder of Oracle was amongst the first few, who realised the need for a software based Database Management System. What is DBMS?\nA DBMS is a software that allows creation, definition and manipulation of database, allowing users to store, process and analyse data easily. \nDBMS provides us with an interface or a tool, to perform various operations like creating database, storing data in it, updating data, creating tables in the database and a lot more.\nDBMS also provides protection and security to the databases. It also maintains data consistency in case of multiple users.\nHere are some examples of popular DBMS used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics:",
+            "similarityScore": 0.4373554368010194,
+            "chunkIndex": 2,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "8c5c932e-62a5-4bf7-b7f7-5ca76ce3d33c",
+            "documentId": "a684d624-c1ae-42b4-8f8b-78cef56c1035",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": "s realised that they needed a better solution to this problem.\nLarry Ellison, the co-founder of Oracle was amongst the first few, who realised the need for a software based Database Management System. What is DBMS?\nA DBMS is a software that allows creation, definition and manipulation of database, allowing users to store, process and analyse data easily. \nDBMS provides us with an interface or a tool, to perform various operations like creating database, storing data in it, updating data, creating tables in the database and a lot more.\nDBMS also provides protection and security to the databases. It also maintains data consistency in case of multiple users.\nHere are some examples of popular DBMS used these days:\nMySql\nOracle\nSQL Server\nIBM DB2\nPostgreSQL\nAmazon SimpleDB (cloud based) etc. Characteristics of Database Management System A database management system has following characteristics:",
+            "similarityScore": 0.4373554368010194,
+            "chunkIndex": 2,
+            "pageNumber": null,
+            "metadata": {}
+        },
+        {
+            "chunkId": "b86e1779-a163-4375-bb61-2a1c296cb622",
+            "documentId": "b0c6aa57-5828-419f-972c-147cf8d9b475",
+            "documentName": "db_introduction_applications.docx",
+            "chunkText": ", protecting the data from un-authorised access. In a typical DBMS, we can create user accounts with different access permissions, using which we can easily secure our data by restricting user access. DBMS supports transactions, which allows us to better handle and manage data integrity in real world applications where multi-threading is extensively used. Advantages of DBMS\nSegregation of applicaion program.\nMinimal data duplicacy or data redundancy.\nEasy retrieval of data using the Query Language.\nReduced development time and maintainance need.\nWith Cloud Datacenters, we now have Database Management Systems capable of storing almost infinite data.\nSeamless integration into the application programming languages which makes it very easier to add a database to almost any application or website. Disadvantages of DBMS\nIt's Complexity\nExcept MySQL, which is open source, licensed DBMSs are generally costly.\nThey are large in size.",
+            "similarityScore": 0.43412906468493523,
+            "chunkIndex": 5,
+            "pageNumber": null,
+            "metadata": {}
+        }
+    ],
+    "totalResults": 5,
+    "latencyMs": 17
 }
 ```
 
@@ -436,7 +564,7 @@ docker run -p 8080:8080 \
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Java 21, Spring Boot 3.3.x |
+| Runtime | Java 17, Spring Boot 3.3.x |
 | AI | Spring AI 1.0.1, local Ollama (llama3.2:3b chat + nomic-embed-text embeddings) |
 | Database | PostgreSQL 16 + pgvector extension |
 | Cache | Redis 7.2 |
