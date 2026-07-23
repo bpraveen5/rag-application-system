@@ -115,7 +115,7 @@ rag-application/
 
 ### Prerequisites
 
-- Java 21
+- Java 17
 - Docker + Docker Compose
 - [Ollama](https://ollama.com) — either running locally, or via the `ollama` service in
   `docker-compose.yml` (no API key required; it's a local model runtime)
